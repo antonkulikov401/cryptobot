@@ -1,0 +1,14 @@
+eng
+1:I don't know such coin
+2:Hello! I provide the latest cryptomarket info. Type \help to know what I can do.
+3:Select language
+4:/lang - change language\n/curr - change currency\n_cryptocurrency-name-or-code_ - get latest info on this coin (for example, _btc_ or _litecoin_)\n_coin-1 to coin-2_ - get approximate exchange rate (for example, _btc to eth_ or _monero to bitcoin-cash_)
+5:Language changed
+6:Price
+7:Market cap
+8:24 hour volume
+9:24 hour change
+10:Select currency
+11:Currency changed
+12:I don't know such command
+13:Assuming you wrote
