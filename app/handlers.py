@@ -1,8 +1,9 @@
 import difflib
 import telebot
+from contextlib import contextmanager
 from app import bot, cg, coins, dicts, fiat
 import app.db_utils as db
-from app.utils import t
+from app.utils import t, UnknownCoinException
 
 
 @bot.message_handler(commands=['start'])
@@ -47,25 +48,35 @@ def handle_unknown_command(message):
     bot.send_message(message.chat.id, t('12', lang))
 
 
+@contextmanager
 def get_coin_name(cid, raw_name):
-    if raw_name in coins.keys():
-        return raw_name
-    else:
-        match = difflib.get_close_matches(raw_name, coins.keys(), 1, 0.75)
-        if len(match) > 0:
-            lang = db.get_lang(cid)
-            bot.send_message(cid, t('13', lang) + ': _' + match[0] + '_',
-                             parse_mode='Markdown')
-            return match[0]
+    try:
+        if raw_name in coins.keys():
+            yield raw_name
         else:
-            return None
+            match = difflib.get_close_matches(raw_name, coins.keys(), 1, 0.75)
+            if len(match) > 0:
+                lang = db.get_lang(cid)
+                bot.send_message(cid, t('13', lang) + ': _' + match[0] + '_',
+                                 parse_mode='Markdown')
+                yield match[0]
+            else:
+                yield None
+    except UnknownCoinException as e:
+        lang = db.get_lang(cid)
+        bot.send_message(cid, t('1', lang) + ': ' + e.msg)
+        bot.send_sticker(cid, 'CAADAgADWwADsiFfFVNQKDUCqm9IAg')
+    except Exception:
+        lang = db.get_lang(cid)
+        bot.send_message(cid, t('14', lang))
 
 
 def get_coin_info(cid, coin_name):
     lang = db.get_lang(cid)
     curr = db.get_currency(cid)
-    coin = get_coin_name(cid, coin_name)
-    if coin is not None:
+    with get_coin_name(cid, coin_name) as coin:
+        if coin is None:
+            raise UnknownCoinException(coin_name)
         coin = coins[coin]
         info = cg.get_price(ids=coin, vs_currencies=curr,
                             include_market_cap='true',
@@ -74,31 +85,28 @@ def get_coin_info(cid, coin_name):
         msg = ('*' + coin + '*\n' + t('6', lang) + ': ' +
                str(info[coin][curr]) + fiat[curr] + '\n' + t('7', lang) +
                ': ' + str(info[coin][curr + '_market_cap']) + fiat[curr] +
-               '\n' + t('8', lang) + ': ' + str(info[coin][curr + '_24h_vol'])
-               + fiat[curr] + '\n' + t('9', lang) + ': ' +
-               str(info[coin][curr + '_24h_change']) + fiat[curr])
+               '\n' + t('8', lang) + ': ' +
+               str(info[coin][curr + '_24h_vol']) + fiat[curr] + '\n'
+               + t('9', lang) + ': ' +
+               str(info[coin][curr + '_24h_change']) + '%')
         bot.send_message(cid, msg, parse_mode='Markdown')
-    else:
-        bot.send_message(cid, t('1', lang))
-        bot.send_sticker(cid, 'CAADAgADWwADsiFfFVNQKDUCqm9IAg')
 
 
 def get_coin_rate(cid, coin_name_from, coin_name_to):
     lang = db.get_lang(cid)
     curr = db.get_currency(cid)
-    coin_from = get_coin_name(cid, coin_name_from)
-    coin_to = get_coin_name(cid, coin_name_to)
-    if coin_from is not None and coin_to is not None:
-        coin_from = coins[coin_from]
-        coin_to = coins[coin_to]
-        price_from = cg.get_price(ids=coin_from, vs_currencies='usd')
-        price_to = cg.get_price(ids=coin_to, vs_currencies='usd')
-        rate = price_from[coin_from]['usd'] / price_to[coin_to]['usd']
-        bot.send_message(cid, '1 ' + coin_from + u' \u2248' +
-                         ' {0:.10f} '.format(rate) + coin_to)
-    else:
-        bot.send_message(cid, t('1', lang))
-        bot.send_sticker(cid, 'CAADAgADWwADsiFfFVNQKDUCqm9IAg')
+    with get_coin_name(cid, coin_name_from) as coin_from:
+        with get_coin_name(cid, coin_name_to) as coin_to:
+            if coin_from is None or coin_to is None:
+                raise UnknownCoinException(coin_name_from if coin_from is None
+                                           else coin_name_to)
+            coin_from = coins[coin_from]
+            coin_to = coins[coin_to]
+            price_from = cg.get_price(ids=coin_from, vs_currencies='usd')
+            price_to = cg.get_price(ids=coin_to, vs_currencies='usd')
+            rate = price_from[coin_from]['usd'] / price_to[coin_to]['usd']
+            bot.send_message(cid, '1 ' + coin_from + u' \u2248' +
+                             ' {0:.10f} '.format(rate) + coin_to)
 
 
 def select_lang(cid):

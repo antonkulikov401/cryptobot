@@ -22,3 +22,9 @@ def t(msg, lang):
         return dicts[lang][msg]
     except BaseException:
         return '?'
+
+
+class UnknownCoinException(Exception):
+    def __init__(self, msg):
+        super().__init__()
+        self.msg = msg
