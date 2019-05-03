@@ -1,9 +1,14 @@
 import difflib
 import telebot
+import os
+import subprocess  # sudo apt-get install ffmpeg
+import urllib.request as req
+from pathlib import Path
 from contextlib import contextmanager
-from app import bot, cg, coins, dicts, fiat
+from speech_recognition import RequestError, UnknownValueError
+from app import bot, cg, coins, dicts, fiat, token
 import app.db_utils as db
-from app.utils import t, UnknownCoinException
+from app.utils import t, UnknownCoinError, transcribe_audio
 
 
 @bot.message_handler(commands=['start'])
@@ -48,6 +53,34 @@ def handle_unknown_command(message):
     bot.send_message(message.chat.id, t('12', lang))
 
 
+@bot.message_handler(content_types=['voice'])
+def handle_audio_command(message):
+    info = bot.get_file(message.voice.file_id)
+    url = 'https://api.telegram.org/file/bot{0}/{1}'.format(token,
+                                                            info.file_path)
+    opener = req.build_opener(req.ProxyHandler(telebot.apihelper.proxy))
+    audio_data = opener.open(url)
+    Path('./temp/audio/').mkdir(parents=True, exist_ok=True)
+    path = str(Path('./temp/audio/' + info.file_id))
+    with open(path + '.oga', 'wb') as f:
+        f.write(audio_data.read())
+    subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'panic', '-i',
+                    path + '.oga', path + '.wav'])
+    try:
+        message.text = transcribe_audio(path + '.wav')
+        bot.send_message(message.chat.id, message.text)
+        handle_text_command(message)
+    except UnknownValueError:
+        lang = db.get_lang(message.chat.id)
+        bot.send_message(message.chat.id, t('15', lang))
+    except RequestError:
+        lang = db.get_lang(message.chat.id)
+        bot.send_message(message.chat.id, t('16', lang))
+    finally:
+        os.remove(path + '.oga')
+        os.remove(path + '.wav')
+
+
 @contextmanager
 def get_coin_name(cid, raw_name):
     try:
@@ -62,7 +95,7 @@ def get_coin_name(cid, raw_name):
                 yield match[0]
             else:
                 yield None
-    except UnknownCoinException as e:
+    except UnknownCoinError as e:
         lang = db.get_lang(cid)
         bot.send_message(cid, t('1', lang) + ': ' + e.msg)
         bot.send_sticker(cid, 'CAADAgADWwADsiFfFVNQKDUCqm9IAg')
@@ -76,7 +109,7 @@ def get_coin_info(cid, coin_name):
     curr = db.get_currency(cid)
     with get_coin_name(cid, coin_name) as coin:
         if coin is None:
-            raise UnknownCoinException(coin_name)
+            raise UnknownCoinError(coin_name)
         coin = coins[coin]
         info = cg.get_price(ids=coin, vs_currencies=curr,
                             include_market_cap='true',
@@ -98,8 +131,8 @@ def get_coin_rate(cid, coin_name_from, coin_name_to):
     with get_coin_name(cid, coin_name_from) as coin_from:
         with get_coin_name(cid, coin_name_to) as coin_to:
             if coin_from is None or coin_to is None:
-                raise UnknownCoinException(coin_name_from if coin_from is None
-                                           else coin_name_to)
+                raise UnknownCoinError(coin_name_from if coin_from is None
+                                       else coin_name_to)
             coin_from = coins[coin_from]
             coin_to = coins[coin_to]
             price_from = cg.get_price(ids=coin_from, vs_currencies='usd')

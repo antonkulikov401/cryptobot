@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import speech_recognition as sr  # pip3 install SpeechRecognition
 from app.globals import dicts
 
 
@@ -24,7 +25,14 @@ def t(msg, lang):
         return '?'
 
 
-class UnknownCoinException(Exception):
+def transcribe_audio(audio_path):
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(audio_path) as source:
+        audio = recognizer.record(source)
+    return recognizer.recognize_google(audio)
+
+
+class UnknownCoinError(Exception):
     def __init__(self, msg):
         super().__init__()
         self.msg = msg
