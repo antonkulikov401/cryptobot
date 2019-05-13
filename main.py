@@ -3,9 +3,7 @@ import app.db_utils
 
 
 def main():
-    with open('token', 'r') as token_file:
-        token = token_file.readline()[:-1]
-    app.init_bot(token)
+    app.init_bot()
     app.bot.polling(none_stop=True, interval=1)
 
 
